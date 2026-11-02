@@ -51,4 +51,244 @@
     .btn-calc { width: 100%; background-color: var(--accent); color: white; border: none; border-radius: 8px; padding: 12px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
     .btn-calc:hover { background-color: var(--accent-hover); }
 
-    .result-box { margin-top: 20px; border-
+    .result-box { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 16px; }
+    .result-group { background: var(--card-inner); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; border: 1px solid var(--border); }
+    .result-title { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .result-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; font-size: 0.9rem; }
+    .result-row:last-child { margin-bottom: 0; }
+    .val-large { font-size: 1.15rem; font-weight: 700; }
+    .text-highlight { color: var(--highlight); }
+    .text-warning { color: var(--warning); }
+    .badge { font-size: 0.7rem; background: var(--warning); color: #000; padding: 1px 5px; border-radius: 4px; margin-left: 4px; font-weight: normal; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>⚔️ 行軍與攻城時間精算器</h1>
+
+  <div class="section-title">
+    <span>行軍路徑座標</span>
+  </div>
+
+  <div class="coord-list" id="coordList">
+    <!-- 起點 -->
+    <div class="coord-row">
+      <span class="coord-tag tag-start">起點</span>
+      <input type="number" class="coord-x" placeholder="X" value="1">
+      <input type="number" class="coord-y" placeholder="Y" value="1">
+      <div style="width: 34px;"></div>
+    </div>
+    <!-- 預設中繼點 -->
+    <div class="coord-row waypoint-row">
+      <span class="coord-tag tag-mid">途經 1</span>
+      <input type="number" class="coord-x" placeholder="X" value="3">
+      <input type="number" class="coord-y" placeholder="Y" value="4">
+      <button class="btn-remove" onclick="removeWaypoint(this)" title="刪除途經點">×</button>
+    </div>
+    <!-- 終點 -->
+    <div class="coord-row" id="endPointRow">
+      <span class="coord-tag tag-end">攻城點</span>
+      <input type="number" class="coord-x" placeholder="X" value="3">
+      <input type="number" class="coord-y" placeholder="Y" value="3">
+      <div style="width: 34px;"></div>
+    </div>
+  </div>
+
+  <button class="btn-add" onclick="addWaypoint()">＋ 插入非直線途經點（避障/繞路）</button>
+
+  <div class="target-time-box">
+    <label>🎯 設定預定滿士氣【攻城開打時間】：</label>
+    <input type="datetime-local" id="siegeTime">
+    <div class="quick-btn-group">
+      <button class="quick-btn" onclick="setQuickSiegeTime(20, 0)">今晚 20:00</button>
+      <button class="quick-btn" onclick="setQuickSiegeTime(21, 0)">今晚 21:00</button>
+      <button class="quick-btn" onclick="setQuickSiegeTime(22, 0)">今晚 22:00</button>
+      <button class="quick-btn" onclick="clearSiegeTime()">清除</button>
+    </div>
+  </div>
+
+  <button class="btn-calc" onclick="calculate()">精算行軍排程</button>
+
+  <div class="result-box" id="resultBox">
+    <!-- 基礎路程與耗時 -->
+    <div class="result-group">
+      <div class="result-title">路程耗時總計</div>
+      <div class="result-row">
+        <span>切比雪夫總距離</span>
+        <span class="val-large" id="distVal">-</span>
+      </div>
+      <div class="result-row" id="breakdownRow" style="font-size:0.8rem; color:#64748b;"></div>
+      <div class="result-row" style="margin-top:6px;">
+        <span>行軍耗時 (30秒/格)</span>
+        <span id="marchTimeVal">-</span>
+      </div>
+      <div class="result-row">
+        <span>士氣恢復 (2分/格)</span>
+        <span id="moraleTimeVal">-</span>
+      </div>
+      <div class="result-row" style="border-top:1px dashed var(--border); padding-top:6px; margin-top:6px;">
+        <span>單趟所需總時間</span>
+        <span class="text-highlight" id="totalTimeVal">-</span>
+      </div>
+    </div>
+
+    <!-- 反推時間區塊 -->
+    <div class="result-group" id="reverseScheduleBox" style="border-color: #3b82f6;">
+      <div class="result-title" style="color: #60a5fa;">🎯 攻城逆推作戰排程</div>
+      <div class="result-row">
+        <span>預定滿士氣開打：</span>
+        <span id="targetSiegeDisplay">-</span>
+      </div>
+      <div class="result-row" style="border-top: 1px dashed var(--border); padding-top:6px; margin-top:6px;">
+        <span style="font-weight: 600; color: #f59e0b;">🚩 最晚起步時間：</span>
+        <span class="val-large text-warning" id="departureTimeVal">-</span>
+      </div>
+      <div class="result-row">
+        <span style="color: #94a3b8;">行軍抵達目標時間：</span>
+        <span id="arrivalTimeVal">-</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let waypointCount = 1;
+
+  function addWaypoint() {
+    waypointCount++;
+    const endRow = document.getElementById('endPointRow');
+    const newRow = document.createElement('div');
+    newRow.className = 'coord-row waypoint-row';
+    newRow.innerHTML = `
+      <span class="coord-tag tag-mid">途經</span>
+      <input type="number" class="coord-x" placeholder="X">
+      <input type="number" class="coord-y" placeholder="Y">
+      <button class="btn-remove" onclick="removeWaypoint(this)" title="刪除途經點">×</button>
+    `;
+    endRow.parentNode.insertBefore(newRow, endRow);
+    renumberWaypoints();
+  }
+
+  function removeWaypoint(btn) {
+    btn.parentElement.remove();
+    renumberWaypoints();
+    calculate();
+  }
+
+  function renumberWaypoints() {
+    const waypoints = document.querySelectorAll('.waypoint-row');
+    waypoints.forEach((row, idx) => {
+      row.querySelector('.coord-tag').innerText = `途經 ${idx + 1}`;
+    });
+  }
+
+  function formatDuration(totalSec) {
+    const hours = Math.floor(totalSec / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+    let parts = [];
+    if (hours > 0) parts.push(`${hours} 小時`);
+    if (minutes > 0 || hours > 0) parts.push(`${minutes} 分`);
+    parts.push(`${seconds} 秒`);
+    return parts.join(' ');
+  }
+
+  function formatTime(d) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  function setQuickSiegeTime(h, m) {
+    const now = new Date();
+    const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+    if (target < now) {
+      target.setDate(target.getDate() + 1); // 如果已過則設為明天
+    }
+    const pad = n => String(n).padStart(2, '0');
+    const localIso = `${target.getFullYear()}-${pad(target.getMonth()+1)}-${pad(target.getDate())}T${pad(target.getHours())}:${pad(target.getMinutes())}`;
+    document.getElementById('siegeTime').value = localIso;
+    calculate();
+  }
+
+  function clearSiegeTime() {
+    document.getElementById('siegeTime').value = '';
+    calculate();
+  }
+
+  function calculate() {
+    const rows = document.querySelectorAll('.coord-row');
+    let points = [];
+    for (let r of rows) {
+      const x = parseFloat(r.querySelector('.coord-x').value);
+      const y = parseFloat(r.querySelector('.coord-y').value);
+      if (isNaN(x) || isNaN(y)) {
+        alert("請確認所有座標欄位皆已輸入完整數字！");
+        return;
+      }
+      points.push({ x, y });
+    }
+
+    if (points.length < 2) return;
+
+    // 計算各段切比雪夫距離
+    let totalDist = 0;
+    let breakdown = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const d = Math.max(Math.abs(points[i+1].x - points[i].x), Math.abs(points[i+1].y - points[i].y));
+      breakdown.push(`段${i+1}: ${d}格`);
+      totalDist += d;
+    }
+
+    // 行軍耗時 (30秒/格)
+    const marchSeconds = totalDist * 30;
+
+    // 士氣恢復 (2分/格，上限 200 分鐘)
+    const rawMoraleMinutes = totalDist * 2;
+    const isCapped = rawMoraleMinutes >= 200;
+    const moraleMinutes = Math.min(rawMoraleMinutes, 200);
+    const moraleSeconds = moraleMinutes * 60;
+
+    // 總耗時
+    const totalDurationSeconds = marchSeconds + moraleSeconds;
+
+    // 渲染基礎路程
+    document.getElementById('distVal').innerText = `${totalDist} 格`;
+    document.getElementById('breakdownRow').innerText = breakdown.length > 1 ? `(${breakdown.join(' ➔ ')})` : '';
+    document.getElementById('marchTimeVal').innerText = formatDuration(marchSeconds);
+    document.getElementById('moraleTimeVal').innerHTML = formatDuration(moraleSeconds) + (isCapped ? ' <span class="badge">已達200分上限</span>' : '');
+    document.getElementById('totalTimeVal').innerText = formatDuration(totalDurationSeconds);
+
+    // 反推時間邏輯
+    const siegeVal = document.getElementById('siegeTime').value;
+    const reverseBox = document.getElementById('reverseScheduleBox');
+
+    if (siegeVal) {
+      const siegeDate = new Date(siegeVal);
+      // 起步時間 = 攻城時間 - 總耗時
+      const departureDate = new Date(siegeDate.getTime() - totalDurationSeconds * 1000);
+      // 抵達目標時間 = 攻城時間 - 士氣恢復時間 (即 出發 + 行軍時間)
+      const arrivalDate = new Date(siegeDate.getTime() - moraleSeconds * 1000);
+
+      document.getElementById('targetSiegeDisplay').innerText = formatTime(siegeDate);
+      document.getElementById('departureTimeVal').innerText = formatTime(departureDate);
+      document.getElementById('arrivalTimeVal').innerText = formatTime(arrivalDate);
+      reverseBox.style.display = 'block';
+    } else {
+      // 若沒填攻城時間，預設展示「若現在起步」的時間推算
+      const now = new Date();
+      const arrivalDate = new Date(now.getTime() + marchSeconds * 1000);
+      const fullMoraleDate = new Date(now.getTime() + totalDurationSeconds * 1000);
+
+      document.getElementById('targetSiegeDisplay').innerText = "(未指定，顯示若現在起步)";
+      document.getElementById('departureTimeVal').innerText = formatTime(now) + " (立刻出發)";
+      document.getElementById('arrivalTimeVal').innerText = `${formatTime(arrivalDate)} (滿士氣: ${formatTime(fullMoraleDate)})`;
+    }
+  }
+
+  // 預設初始化攻城時間為今晚 21:00
+  setQuickSiegeTime(21, 0);
+</script>
+
+</body>
+</html>
